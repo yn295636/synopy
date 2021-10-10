@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import json
+
 try:
     from urlparse import urljoin
 except ModuleNotFoundError:
@@ -9,9 +10,7 @@ import requests
 
 from .errors import format_error
 
-
 WEBAPI_PREFIX = 'webapi'
-
 
 class Authentication(object):
     def __init__(self, sid, format='cookie'):
@@ -26,9 +25,8 @@ class Authentication(object):
         auth[sid_key] = self.sid
         return auth
 
-
 class Connection(object):
-    def __init__(self, protocol, domain, auth=None, port=80, verify=True):
+    def __init__(self, protocol, domain, auth=None, port=80, verify=True, timeout=15):
         assert protocol in ('http', 'https'), "invalid protocol"
         assert int(port), "port number must be integer"
 
@@ -37,6 +35,8 @@ class Connection(object):
         self.auth = auth
         self.port = str(port)
         self.verify = verify
+        self.timeout = timeout
+        self.session = requests.session()
 
     def build_url(self, path):
         base_path = u'://'.join([self.protocol, self.domain])
@@ -55,6 +55,7 @@ class Connection(object):
                 # pass it as a cookie
                 opts['cookies'] = auth_params
         opts['verify'] = self.verify
+        opts['timeout'] = self.timeout
         return opts
 
     def send(self, path, http_method, namespace, params, caller=None):
@@ -65,9 +66,9 @@ class Connection(object):
         url = self.build_url(path)
         opts = self.build_request_options(http_method, params)
         if http_method == 'get':
-            resp = requests.get(url, **opts)
+            resp = self.session.get(url, **opts)
         else:
-            resp = requests.post(url, **opts)
+            resp = self.session.post(url, **opts)
 
         response = self.handle_response(resp, namespace)
         if caller and caller.has_handler_for(api_method):
@@ -100,7 +101,6 @@ class Connection(object):
         else:
             raise ValueError(u"Wrong account name or password")
 
-
 class Response(object):
     def __init__(self, resp):
         # the ``requests`` library response object
@@ -129,7 +129,6 @@ class Response(object):
     def __str__(self):
         return str(self.payload)
 
-
 def _send_command(self, api_method, http_method, params):
     all_params = self.base_params
     all_params['method'] = api_method
@@ -141,7 +140,6 @@ def _send_command(self, api_method, http_method, params):
         all_params,
         caller=self
     )
-
 
 class ApiBaseMeta(type):
     def __init__(cls, name, bases, attrs):
@@ -161,6 +159,7 @@ class ApiBaseMeta(type):
         def wrapped_send(_api_method_name, _http_method):
             def _wrapped(self, **params):
                 return _send_command(self, _api_method_name, _http_method, params)
+
             return _wrapped
 
         if isinstance(api_method, six.string_types):
@@ -199,7 +198,6 @@ class ApiBaseMeta(type):
             func_name,
             wrapped_send(api_method_name, http_method)
         )
-
 
 @six.add_metaclass(ApiBaseMeta)
 class ApiBase(object):
